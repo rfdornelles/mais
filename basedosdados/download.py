@@ -1,6 +1,8 @@
 import pandas_gbq
 from pathlib import Path
 import pydata_google_auth
+from google.cloud import bigquery
+import pandas as pd
 
 from basedosdados.exceptions import BaseDosDadosException
 from pandas_gbq.gbq import GenericGBQException
@@ -207,3 +209,276 @@ def read_table(
         raise BaseDosDadosException("Both table_id and dataset_id should be filled.")
 
     return read_sql(query, billing_project_id=billing_project_id, reauth=reauth)
+
+
+def list_datasets(
+    query_project_id="basedosdados",
+    filter_by=None,
+    with_description=False,
+    **tabulate_kwargs,
+):
+    """Fetch the dataset_id of datasets available at query_project_id. Prints information on
+    screen in markdown friendly format.
+
+    Args:
+        query_project_id (str): Optional.
+            Which project the table lives. You can change this you want to query different projects.
+        filter_by (str): Optional
+            String to be matched in dataset_id.
+        with_description (bool): Optional
+            If True, fetch the dataset description for each dataset.
+        tabulate_kwargs (): Optional
+            Extra arguments accepted by tabulate(check available formatting options at
+             https://pypi.org/project/tabulate/). Declare as a dict.
+        Example:
+        list_datasets(
+        filter_by='sp',
+        with_description=True,
+        **{'tablefmt':'fancy_grid', 'colalign':('left','left','center')}
+        )
+    Returns:
+        None.
+    """
+
+    client = bigquery.Client(credentials=credentials(), project=query_project_id)
+
+    datasets_list = list(client.list_datasets())
+
+    datasets = pd.DataFrame(
+        [dataset.dataset_id for dataset in datasets_list], columns=["dataset_id"]
+    )
+
+    if filter_by:
+
+        datasets = datasets.loc[datasets["dataset_id"].str.contains(filter_by)]
+
+    if with_description:
+
+        datasets["description"] = [
+            client.get_dataset(dataset).description
+            for dataset in datasets["dataset_id"]
+        ]
+
+    print(datasets.to_markdown(**tabulate_kwargs))
+
+    return None
+
+
+def list_dataset_tables(
+    dataset_id,
+    query_project_id="basedosdados",
+    filter_by=None,
+    with_description=False,
+    **tabulate_kwargs,
+):
+    """Fetch table_id for tables available at the specified dataset_id. Prints the information
+    on screen in markdown friendly format.
+
+    Args:
+        dataset_id (str): Optional.
+            Dataset id available in basedosdados.
+        query_project_id (str): Optional.
+            Which project the table lives. You can change this you want to query different projects.
+        filter_by (str): Optional
+            String to be matched in the table_id.
+        with_description (bool): Optional
+             If True, fetch table descriptions for each table that match the search criteria.
+         tabulate_kwargs (): Optional
+            Extra arguments accepted by tabulate(check available formatting options at
+             https://pypi.org/project/tabulate/). Declare as a dict.
+        Example:
+        list_dataset_tables(
+        dataset_id='br_ibge_censo2010'
+        filter_by='renda',
+        with_description=True,
+        **{'tablefmt':'fancy_grid', 'colalign':('left','left','center')}
+        )
+    Returns:
+        None.
+    """
+    client = bigquery.Client(credentials=credentials(), project=query_project_id)
+
+    dataset = client.get_dataset(dataset_id)
+
+    tables_list = list(client.list_tables(dataset))
+
+    tables = pd.DataFrame(
+        [table.table_id for table in tables_list], columns=["table_id"]
+    )
+
+    if filter_by:
+
+        tables = tables.loc[tables["table_id"].str.contains(filter_by)]
+
+    if with_description:
+
+        tables["description"] = [
+            client.get_table(f"{dataset_id}.{table}").description
+            for table in tables["table_id"]
+        ]
+
+    print(tables.to_markdown(**tabulate_kwargs))
+
+    return None
+
+
+# Como todas as funções printam direto na tela, talvez as funções get_*_description sejam obsoletas,
+# devido à poder requisitar ao parâmetro de filtro e with_description das funções list
+
+
+def get_dataset_description(dataset_id=None, query_project_id="basedosdados"):
+    """Prints the specified dataset description.
+
+    Args:
+        dataset_id (str): Optional.
+            Dataset id available in basedosdados.
+        query_project_id (str): Optional.
+            Which project the table lives. You can change this you want to query different projects.
+
+    Returns:
+        None.
+    """
+
+    client = bigquery.Client(credentials=credentials(), project=query_project_id)
+
+    dataset = client.get_dataset(dataset_id)
+
+    print(dataset.description)
+
+    return None
+
+
+def get_table_description(
+    dataset_id=None, table_id=None, query_project_id="basedosdados"
+):
+    """Prints the specified table description.
+
+    Args:
+        dataset_id (str): Optional.
+            Dataset id available in basedosdados. It should always come with table_id.
+        table_id (str): Optional.
+            Table id available in basedosdados.dataset_id.
+            It should always come with dataset_id.
+        query_project_id (str): Optional.
+            Which project the table lives. You can change this you want to query different projects.
+
+    Returns:
+        None.
+    """
+
+    client = bigquery.Client(credentials=credentials(), project=query_project_id)
+
+    table = client.get_table(f"{dataset_id}.{table_id}")
+
+    print(table.description)
+
+    return None
+
+
+def get_table_columns(
+    dataset_id=None,
+    table_id=None,
+    query_project_id="basedosdados",
+    **tabulate_kwargs,
+):
+
+    """Fetch the names, types and descriptions for the columns in the specified table. Prints
+    information on screen in markdown friendly format.
+
+    Args:
+        dataset_id (str): Optional.
+            Dataset id available in basedosdados. It should always come with table_id.
+        table_id (str): Optional.
+            Table id available in basedosdados.dataset_id.
+            It should always come with dataset_id.
+        query_project_id (str): Optional.
+            Which project the table lives. You can change this you want to query different projects.
+        tabulate_kwargs (): Optional
+            Extra arguments accepted by tabulate(check available formatting options at
+             https://pypi.org/project/tabulate/). Declare as a dict.
+        Example:
+        get_table_columns(
+        dataset_id='br_ibge_censo2010',
+        table_id='pessoa_renda_setor_censitario',
+        **{'tablefmt':'fancy_grid', 'colalign':('left','left','center')}
+        )
+    Returns:
+        None.
+    """
+
+    client = bigquery.Client(credentials=credentials(), project=query_project_id)
+
+    table_ref = client.get_table(f"{dataset_id}.{table_id}")
+
+    columns = [
+        (field.name, field.field_type, field.description) for field in table_ref.schema
+    ]
+
+    description = pd.DataFrame(columns, columns=["name", "field_type", "description"])
+
+    print(description.to_markdown(**tabulate_kwargs))
+
+    return None
+
+
+def get_table_size(
+    dataset_id,
+    table_id,
+    billing_project_id,
+    query_project_id="basedosdados",
+    **tabulate_kwargs,
+):
+    """Use a query to get the number of rows and size (in Mb) of a table query
+    from BigQuery. Prints information on screen in markdown friendly format.
+
+    Args:
+        dataset_id (str): Optional.
+            Dataset id available in basedosdados. It should always come with table_id.
+        table_id (str): Optional.
+            Table id available in basedosdados.dataset_id.
+            It should always come with dataset_id.
+        query_project_id (str): Optional.
+            Which project the table lives. You can change this you want to query different projects.
+        billing_project_id (str): Optional.
+            Project that will be billed. Find your Project ID here https://console.cloud.google.com/projectselector2/home/dashboard
+         tabulate_kwargs (): Optional
+            Extra arguments accepted by tabulate(check available formatting options at
+            https://pypi.org/project/tabulate/). Declare as a dict.
+        Example:
+        get_table_size(
+        dataset_id='br_ibge_censo2010',
+        table_id='pessoa_renda_setor_censitario',
+        billing_project_id='yourprojectid'
+        **{'tablefmt':'fancy_grid', 'stralign':'center'}
+        )
+    Returns:
+        None
+    """
+
+    billing_client = bigquery.Client(
+        credentials=credentials(), project=billing_project_id
+    )
+
+    query = f"""SELECT COUNT(*) FROM {query_project_id}.{dataset_id}.{table_id}"""
+
+    job = billing_client.query(query, location="US")
+
+    num_rows = job.to_dataframe().loc[0, "f0_"]
+
+    size_mb = round(job.total_bytes_processed / 1024 / 1024, 2)
+
+    table_data = pd.DataFrame(
+        [
+            {
+                "project_id": query_project_id,
+                "dataset_id": dataset_id,
+                "table_id": table_id,
+                "num_rows": num_rows,
+                "size_mb": size_mb,
+            }
+        ]
+    )
+
+    print(table_data.to_markdown(**tabulate_kwargs))
+
+    return None

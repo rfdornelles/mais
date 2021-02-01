@@ -80,6 +80,12 @@ def download(
 
     savepath = Path(savepath)
 
+    # make sure that path exists
+    if savepath.is_dir():
+        savepath.mkdir(parents=True, exist_ok=True)
+    else:
+        savepath.parent.mkdir(parents=True, exist_ok=True)
+
     if (dataset_id is not None) and (table_id is not None):
         table = read_table(
             dataset_id,
@@ -211,14 +217,64 @@ def read_table(
     return read_sql(query, billing_project_id=billing_project_id, reauth=reauth)
 
 
+def _get_header(text):
+    """Gets first paragraph of a text
+
+    Args:
+        text (str or None): Text to be split
+
+    Returns:
+        str: First paragraph
+    """
+
+    if isinstance(text, str):
+        return text.split("\n")[0]
+    elif text is None:
+        return ""
+
+
+def _fix_size(s, step=80):
+
+    final = ""
+
+    for l in s.split(" "):
+        final += (l + " ") if len(final.split("\n")[-1]) < step else "\n"
+
+    return final
+
+
+def _print_output(df):
+    """Prints dataframe contents as print blocks
+
+    Args:
+        df (pd.DataFrame): table to be printed
+    """
+
+    columns = df.columns
+    step = 80
+    print()
+    for i, row in df.iterrows():
+        for c in columns:
+            print(_fix_size(f"{c}: \n\t{row[c]}"))
+        print("-" * (step + 15))
+    print()
+
+    # func = lambda lista, final, step: (
+    # func(lista[1:],
+    #     (final + lista[0] + ' ')
+    #         if len(final.split('\n')[-1]) <= step
+    #         else final + '\n',
+    #      step
+    #        ) if len(lista) else final)
+
+
 def list_datasets(
     query_project_id="basedosdados",
     filter_by=None,
     with_description=False,
-    **tabulate_kwargs,
 ):
     """Fetch the dataset_id of datasets available at query_project_id. Prints information on
-    screen in markdown friendly format.
+    screen.
 
     Args:
         query_project_id (str): Optional.
@@ -226,16 +282,14 @@ def list_datasets(
         filter_by (str): Optional
             String to be matched in dataset_id.
         with_description (bool): Optional
-            If True, fetch the dataset description for each dataset.
-        tabulate_kwargs (): Optional
-            Extra arguments accepted by tabulate(check available formatting options at
-             https://pypi.org/project/tabulate/). Declare as a dict.
-        Example:
+            If True, fetch short dataset description for each dataset.
+
+    Example:
         list_datasets(
         filter_by='sp',
         with_description=True,
-        **{'tablefmt':'fancy_grid', 'colalign':('left','left','center')}
         )
+
     Returns:
         None.
     """
@@ -255,11 +309,11 @@ def list_datasets(
     if with_description:
 
         datasets["description"] = [
-            client.get_dataset(dataset).description
+            _get_header(client.get_dataset(dataset).description)
             for dataset in datasets["dataset_id"]
         ]
 
-    print(datasets.to_markdown(**tabulate_kwargs))
+    _print_output(datasets)
 
     return None
 
@@ -269,10 +323,9 @@ def list_dataset_tables(
     query_project_id="basedosdados",
     filter_by=None,
     with_description=False,
-    **tabulate_kwargs,
 ):
     """Fetch table_id for tables available at the specified dataset_id. Prints the information
-    on screen in markdown friendly format.
+    on screen.
 
     Args:
         dataset_id (str): Optional.
@@ -282,16 +335,13 @@ def list_dataset_tables(
         filter_by (str): Optional
             String to be matched in the table_id.
         with_description (bool): Optional
-             If True, fetch table descriptions for each table that match the search criteria.
-         tabulate_kwargs (): Optional
-            Extra arguments accepted by tabulate(check available formatting options at
-             https://pypi.org/project/tabulate/). Declare as a dict.
-        Example:
+             If True, fetch short table descriptions for each table that match the search criteria.
+
+    Example:
         list_dataset_tables(
         dataset_id='br_ibge_censo2010'
         filter_by='renda',
         with_description=True,
-        **{'tablefmt':'fancy_grid', 'colalign':('left','left','center')}
         )
     Returns:
         None.
@@ -313,21 +363,17 @@ def list_dataset_tables(
     if with_description:
 
         tables["description"] = [
-            client.get_table(f"{dataset_id}.{table}").description
+            _get_header(client.get_table(f"{dataset_id}.{table}").description)
             for table in tables["table_id"]
         ]
 
-    print(tables.to_markdown(**tabulate_kwargs))
+    _print_output(tables)
 
     return None
 
 
-# Como todas as funções printam direto na tela, talvez as funções get_*_description sejam obsoletas,
-# devido à poder requisitar ao parâmetro de filtro e with_description das funções list
-
-
 def get_dataset_description(dataset_id=None, query_project_id="basedosdados"):
-    """Prints the specified dataset description.
+    """Prints the full dataset description.
 
     Args:
         dataset_id (str): Optional.
@@ -351,7 +397,7 @@ def get_dataset_description(dataset_id=None, query_project_id="basedosdados"):
 def get_table_description(
     dataset_id=None, table_id=None, query_project_id="basedosdados"
 ):
-    """Prints the specified table description.
+    """Prints the full table description.
 
     Args:
         dataset_id (str): Optional.
@@ -379,11 +425,10 @@ def get_table_columns(
     dataset_id=None,
     table_id=None,
     query_project_id="basedosdados",
-    **tabulate_kwargs,
 ):
 
     """Fetch the names, types and descriptions for the columns in the specified table. Prints
-    information on screen in markdown friendly format.
+    information on screen.
 
     Args:
         dataset_id (str): Optional.
@@ -393,14 +438,10 @@ def get_table_columns(
             It should always come with dataset_id.
         query_project_id (str): Optional.
             Which project the table lives. You can change this you want to query different projects.
-        tabulate_kwargs (): Optional
-            Extra arguments accepted by tabulate(check available formatting options at
-             https://pypi.org/project/tabulate/). Declare as a dict.
-        Example:
+    Example:
         get_table_columns(
         dataset_id='br_ibge_censo2010',
-        table_id='pessoa_renda_setor_censitario',
-        **{'tablefmt':'fancy_grid', 'colalign':('left','left','center')}
+        table_id='pessoa_renda_setor_censitario'
         )
     Returns:
         None.
@@ -416,7 +457,7 @@ def get_table_columns(
 
     description = pd.DataFrame(columns, columns=["name", "field_type", "description"])
 
-    print(description.to_markdown(**tabulate_kwargs))
+    _print_output(description)
 
     return None
 
@@ -426,10 +467,11 @@ def get_table_size(
     table_id,
     billing_project_id,
     query_project_id="basedosdados",
-    **tabulate_kwargs,
 ):
     """Use a query to get the number of rows and size (in Mb) of a table query
     from BigQuery. Prints information on screen in markdown friendly format.
+
+    WARNING: this query may cost a lot depending on the table.
 
     Args:
         dataset_id (str): Optional.
@@ -441,15 +483,11 @@ def get_table_size(
             Which project the table lives. You can change this you want to query different projects.
         billing_project_id (str): Optional.
             Project that will be billed. Find your Project ID here https://console.cloud.google.com/projectselector2/home/dashboard
-         tabulate_kwargs (): Optional
-            Extra arguments accepted by tabulate(check available formatting options at
-            https://pypi.org/project/tabulate/). Declare as a dict.
-        Example:
+    Example:
         get_table_size(
         dataset_id='br_ibge_censo2010',
         table_id='pessoa_renda_setor_censitario',
         billing_project_id='yourprojectid'
-        **{'tablefmt':'fancy_grid', 'stralign':'center'}
         )
     Returns:
         None
@@ -479,6 +517,6 @@ def get_table_size(
         ]
     )
 
-    print(table_data.to_markdown(**tabulate_kwargs))
+    _print_output(table_data)
 
     return None
